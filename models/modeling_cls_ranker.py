@@ -1,4 +1,10 @@
-from transformers import BertPreTrainedModel, BertLayer
+from transformers import BertPreTrainedModel, BertLayer, BertModel
+from transformers import LongformerConfig, RobertaConfig, BertConfig, RobertaModel
+from transformers.modeling_roberta import RobertaClassificationHead
+
+import torch
+from torch import nn
+from common.utils import NUM_DOCUMENT_PER_EXAMPLE
 
 _BERT_CONFIG_FOR_DOC = "BertConfig"
 _BERT_TOKENIZER_FOR_DOC = "BertTokenizer"
@@ -90,7 +96,7 @@ class BertForParagraphRankingCls(BertPreTrainedModel):
 
 
 
-class RobertaForSequenceClassification(BertPreTrainedModel):
+class RobertaForParagraphRankingCls(BertPreTrainedModel):
     config_class = RobertaConfig
     base_model_prefix = "roberta"
 
@@ -106,6 +112,8 @@ class RobertaForSequenceClassification(BertPreTrainedModel):
         self.classifier = RobertaClassificationHead(config)
         self.init_weights()
 
+    # initial input
+    # input_ids/attention_mask/token_type_ids: B * NUM_DOC * 512
     def forward(
         self,
         input_ids=None,
@@ -128,6 +136,13 @@ class RobertaForSequenceClassification(BertPreTrainedModel):
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
+        batch_size = input_ids.size(0)
+        # reshape, input_ids, attention_masks, token_type_ids
+        input_ids = input_ids.view([batch_size * NUM_DOCUMENT_PER_EXAMPLE, -1])
+        attention_mask = attention_mask.view([batch_size * NUM_DOCUMENT_PER_EXAMPLE, -1])
+        if token_type_ids is not None:
+            token_type_ids = token_type_ids.view([batch_size * NUM_DOCUMENT_PER_EXAMPLE, -1])
+
         outputs = self.roberta(
             input_ids,
             attention_mask=attention_mask,
@@ -139,6 +154,9 @@ class RobertaForSequenceClassification(BertPreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
+        print(outputs.keys())
+        print(outputs)
+        exit()
         sequence_output = outputs[0]
         logits = self.classifier(sequence_output)
 

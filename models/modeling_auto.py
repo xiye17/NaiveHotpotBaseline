@@ -1,11 +1,14 @@
+from collections import OrderedDict
 from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer, EvalPrediction, GlueDataset
-from transformers import LongformerConfig, RobertaConfig, BertConfig
+from transformers import LongformerConfig, RobertaConfig, BertConfig, PretrainedConfig
+from .modeling_cls_ranker import * 
+
 
 MODEL_FOR_PARAGRAPH_RANKING_MAPPING = OrderedDict(
     [
         # (LongformerConfig, LongformerForSequenceClassification),
-        (RobertaConfig, RobertaForSequenceClassification),
-        (BertConfig, BertForSequenceClassification),
+        (RobertaConfig, RobertaForParagraphRankingCls),
+        (BertConfig, BertForParagraphRankingCls),
     ]
 )
 

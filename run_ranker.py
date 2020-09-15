@@ -1,23 +1,44 @@
 import dataclasses
 import logging
 import os
+from os.path import join
 import sys
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Optional
 
 import numpy as np
 
-from transformers import AutoConfig, AutoTokenizer, EvalPrediction, GlueDataset
+from transformers import AutoConfig, AutoTokenizer, EvalPrediction, AutoModelForSequenceClassification
 from transformers import (
     HfArgumentParser,
     Trainer,
     TrainingArguments,
     set_seed,
 )
+from dataset import *
 
+from sklearn.metrics import f1_score
+from models.modeling_auto import AutoModelForPragraphRanking
+
+from functools import partial
 
 logger = logging.getLogger(__name__)
 
+
+
+
+def simple_accuracy(preds, labels):
+    return (preds == labels).mean()
+
+# evaluation using sklearn
+def acc_and_f1(preds, labels):
+    acc = simple_accuracy(preds, labels)
+    f1 = f1_score(y_true=labels, y_pred=preds)
+    return {
+        "acc": acc,
+        "f1": f1,
+        "acc_and_f1": (acc + f1) / 2,
+    }
 
 @dataclass
 class RankerModelArguments:
@@ -28,14 +49,20 @@ class RankerModelArguments:
     model_name_or_path: Optional[str] = field(
         default='roberta-large', metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
     )
+    data_dir: Optional[str] = field(
+        default='outputs', metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
+    )
+    do_mini: bool = field(default=False, metadata={"help": "Whether to use mini dataset for quick debugging"})
+
     config_name: Optional[str] = field(
         default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}
     )
     tokenizer_name: Optional[str] = field(
         default=None, metadata={"help": "Pretrained tokenizer name or path if not the same as model_name"}
     )
+    
     cache_dir: Optional[str] = field(
-        default=None, metadata={"help": "Where do you want to store the pretrained models downloaded from s3"}
+        default='hf_cache', metadata={"help": "Where do you want to store the pretrained models downloaded from s3"}
     )
     max_seq_length: int = field(
         default=512,
@@ -99,7 +126,7 @@ def main():
 
     config = AutoConfig.from_pretrained(
         model_args.config_name if model_args.config_name else model_args.model_name_or_path,
-        # num_labels=num_labels,
+        num_labels=2,
         cache_dir=model_args.cache_dir,
     )
     tokenizer = AutoTokenizer.from_pretrained(
@@ -107,43 +134,28 @@ def main():
         cache_dir=model_args.cache_dir,
     )
     model = AutoModelForPragraphRanking.from_pretrained(
+    # model = AutoModelForSequenceClassification.from_pretrained(
         model_args.model_name_or_path,
         config=config,
         cache_dir=model_args.cache_dir,
     )
-
+    
     # Get datasets
-    train_dataset = (
-        GlueDataset(data_args, tokenizer=tokenizer, cache_dir=model_args.cache_dir) if training_args.do_train else None
-    )
-    eval_dataset = (
-        GlueDataset(data_args, tokenizer=tokenizer, mode="dev", cache_dir=model_args.cache_dir)
-        if training_args.do_eval
-        else None
-    )
-    # test_dataset = (
-    #     GlueDataset(data_args, tokenizer=tokenizer, mode="test", cache_dir=model_args.cache_dir)
-    #     if training_args.do_predict
-    #     else None
-    # )
-
-    def build_compute_metrics_fn(task_name: str) -> Callable[[EvalPrediction], Dict]:
-        def compute_metrics_fn(p: EvalPrediction):
-            if output_mode == "classification":
-                preds = np.argmax(p.predictions, axis=1)
-            elif output_mode == "regression":
-                preds = np.squeeze(p.predictions)
-            return glue_compute_metrics(task_name, preds, p.label_ids)
-
-        return compute_metrics_fn
-
+    train_file = join(model_args.data_dir, 'mini_train_dataset.bin' if model_args.do_mini else 'train_dataset.bin')
+    dev_file = join(model_args.data_dir, 'mini_dev_dataset.bin' if model_args.do_mini else 'dev_dataset.bin')
+    train_dataset = HotpotDataset.from_bin_file(train_file)
+    dev_dataset = HotpotDataset.from_bin_file(dev_file)
+    
+    # doc_cls_collator = HotpotCollator()
+    collate_fn = partial(collate_fn_for_doc_cls, tokenizer, do_eval=True)
     # Initialize our Trainer
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        compute_metrics=build_compute_metrics_fn(data_args.task_name),
+        eval_dataset=dev_dataset,
+        compute_metrics=acc_and_f1,
+        data_collator=collate_fn
     )
 
     # Training
