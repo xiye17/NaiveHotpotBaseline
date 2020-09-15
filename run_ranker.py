@@ -25,13 +25,14 @@ from functools import partial
 logger = logging.getLogger(__name__)
 
 
-
-
 def simple_accuracy(preds, labels):
     return (preds == labels).mean()
 
 # evaluation using sklearn
 def acc_and_f1(preds, labels):
+    print(preds, labels)
+    dump_to_bin({'preds': preds, 'labels': labels}, 'debug.bin')
+    exit()
     acc = simple_accuracy(preds, labels)
     f1 = f1_score(y_true=labels, y_pred=preds)
     return {

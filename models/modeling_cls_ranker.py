@@ -1,9 +1,9 @@
 from transformers import BertPreTrainedModel, BertLayer, BertModel
 from transformers import LongformerConfig, RobertaConfig, BertConfig, RobertaModel
-from transformers.modeling_roberta import RobertaClassificationHead
 
 import torch
 from torch import nn
+from torch.nn import CrossEntropyLoss
 from common.utils import NUM_DOCUMENT_PER_EXAMPLE
 
 _BERT_CONFIG_FOR_DOC = "BertConfig"
@@ -95,6 +95,23 @@ class BertForParagraphRankingCls(BertPreTrainedModel):
 
 
 
+class MLPClassificationHead(nn.Module):
+    """Head for sentence-level classification tasks."""
+
+    def __init__(self, config):
+        super().__init__()
+        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.out_proj = nn.Linear(config.hidden_size, config.num_labels)
+
+    def forward(self, features, **kwargs):
+        # x = features[:, 0, :]  # take <s> token (equiv. to [CLS])
+        x = self.dropout(features)
+        x = self.dense(x)
+        x = torch.tanh(x)
+        x = self.dropout(x)
+        x = self.out_proj(x)
+        return x
 
 class RobertaForParagraphRankingCls(BertPreTrainedModel):
     config_class = RobertaConfig
@@ -105,11 +122,12 @@ class RobertaForParagraphRankingCls(BertPreTrainedModel):
         # self.num_labels = config.num_labels
 
         self.roberta = RobertaModel(config)
+        self.num_labels = config.num_labels
         
         # it can be a bert layer, or simly a self-attention-layer
         # let's do bert layer for now
         self.inter_document_layer = BertLayer(config)
-        self.classifier = RobertaClassificationHead(config)
+        self.classifier = MLPClassificationHead(config)
         self.init_weights()
 
     # initial input
@@ -137,6 +155,17 @@ class RobertaForParagraphRankingCls(BertPreTrainedModel):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         batch_size = input_ids.size(0)
+
+        # my gpu sucks. have to do this to fit my gpu size.
+        # debugging = True
+        # if debugging:
+        #     NUM_DOCUMENT_PER_EXAMPLE = 3
+        #     input_ids = input_ids[:,:NUM_DOCUMENT_PER_EXAMPLE,:]
+        #     attention_mask = attention_mask[:,:NUM_DOCUMENT_PER_EXAMPLE,:]
+        #     if token_type_ids is not None:
+        #         token_type_ids = token_type_ids[:,:NUM_DOCUMENT_PER_EXAMPLE,:]
+        #     labels = labels[:,:NUM_DOCUMENT_PER_EXAMPLE]
+        
         # reshape, input_ids, attention_masks, token_type_ids
         input_ids = input_ids.view([batch_size * NUM_DOCUMENT_PER_EXAMPLE, -1])
         attention_mask = attention_mask.view([batch_size * NUM_DOCUMENT_PER_EXAMPLE, -1])
@@ -154,29 +183,25 @@ class RobertaForParagraphRankingCls(BertPreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
-        print(outputs.keys())
-        print(outputs)
-        exit()
-        sequence_output = outputs[0]
-        logits = self.classifier(sequence_output)
+        # print(outputs)
+        _, pooled_output = outputs
+        # B * NUM * H
+        pooled_output = pooled_output.view([batch_size, NUM_DOCUMENT_PER_EXAMPLE, -1])
+        pooled_output= self.inter_document_layer(pooled_output, output_attentions=output_attentions)
+        pooled_output = pooled_output[0]
 
+        # B * N * H
+        doc_vectors = pooled_output.view([batch_size * NUM_DOCUMENT_PER_EXAMPLE, -1])
+        logits = self.classifier(doc_vectors)
+        logits = logits.view([batch_size, NUM_DOCUMENT_PER_EXAMPLE, -1])        
         loss = None
         if labels is not None:
-            if self.num_labels == 1:
-                #  We are doing regression
-                loss_fct = MSELoss()
-                loss = loss_fct(logits.view(-1), labels.view(-1))
-            else:
-                loss_fct = CrossEntropyLoss()
-                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+
+            loss_fct = CrossEntropyLoss()
+            loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
 
         if not return_dict:
             output = (logits,) + outputs[2:]
             return ((loss,) + output) if loss is not None else output
 
-        return SequenceClassifierOutput(
-            loss=loss,
-            logits=logits,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-        )
+        raise RuntimeError('No valid return type')
