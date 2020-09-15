@@ -11,10 +11,11 @@ import numpy as np
 from transformers import AutoConfig, AutoTokenizer, EvalPrediction, AutoModelForSequenceClassification
 from transformers import (
     HfArgumentParser,
-    Trainer,
     TrainingArguments,
     set_seed,
 )
+from models.ranker_trainer import HotpotRankerTrainer as Trainer
+from models.ranker_trainer import acc_and_f1
 from dataset import *
 
 from sklearn.metrics import f1_score
@@ -24,22 +25,6 @@ from functools import partial
 
 logger = logging.getLogger(__name__)
 
-
-def simple_accuracy(preds, labels):
-    return (preds == labels).mean()
-
-# evaluation using sklearn
-def acc_and_f1(preds, labels):
-    print(preds, labels)
-    dump_to_bin({'preds': preds, 'labels': labels}, 'debug.bin')
-    exit()
-    acc = simple_accuracy(preds, labels)
-    f1 = f1_score(y_true=labels, y_pred=preds)
-    return {
-        "acc": acc,
-        "f1": f1,
-        "acc_and_f1": (acc + f1) / 2,
-    }
 
 @dataclass
 class RankerModelArguments:
@@ -135,7 +120,6 @@ def main():
         cache_dir=model_args.cache_dir,
     )
     model = AutoModelForPragraphRanking.from_pretrained(
-    # model = AutoModelForSequenceClassification.from_pretrained(
         model_args.model_name_or_path,
         config=config,
         cache_dir=model_args.cache_dir,
@@ -167,7 +151,7 @@ def main():
         trainer.save_model()
         # For convenience, we also re-save the tokenizer to the same directory,
         # so that you can share your model easily on huggingface.co/models =)
-        if trainer.is_world_master():
+        if trainer.is_world_process_zero():
             tokenizer.save_pretrained(training_args.output_dir)
 
     # Evaluation
@@ -176,56 +160,52 @@ def main():
         logger.info("*** Evaluate ***")
 
         # Loop to handle MNLI double evaluation (matched, mis-matched)
-        eval_datasets = [eval_dataset]
-        if data_args.task_name == "mnli":
-            mnli_mm_data_args = dataclasses.replace(data_args, task_name="mnli-mm")
-            eval_datasets.append(
-                GlueDataset(mnli_mm_data_args, tokenizer=tokenizer, mode="dev", cache_dir=model_args.cache_dir)
-            )
-
+        eval_datasets = [dev_dataset]
         for eval_dataset in eval_datasets:
-            trainer.compute_metrics = build_compute_metrics_fn(eval_dataset.args.task_name)
+            trainer.compute_metrics = acc_and_f1
+            trainer.data_collator=partial(collate_fn_for_doc_cls, tokenizer, do_eval=True)
+
             eval_result = trainer.evaluate(eval_dataset=eval_dataset)
 
             output_eval_file = os.path.join(
-                training_args.output_dir, f"eval_results_{eval_dataset.args.task_name}.txt"
+                training_args.output_dir, f"eval_results.txt"
             )
-            if trainer.is_world_master():
+            if trainer.is_world_process_zero():
                 with open(output_eval_file, "w") as writer:
-                    logger.info("***** Eval results {} *****".format(eval_dataset.args.task_name))
+                    logger.info("***** Eval results *****")
                     for key, value in eval_result.items():
                         logger.info("  %s = %s", key, value)
                         writer.write("%s = %s\n" % (key, value))
 
             eval_results.update(eval_result)
 
-    if training_args.do_predict:
-        logging.info("*** Test ***")
-        test_datasets = [test_dataset]
-        if data_args.task_name == "mnli":
-            mnli_mm_data_args = dataclasses.replace(data_args, task_name="mnli-mm")
-            test_datasets.append(
-                GlueDataset(mnli_mm_data_args, tokenizer=tokenizer, mode="test", cache_dir=model_args.cache_dir)
-            )
+    # if training_args.do_predict:
+    #     logging.info("*** Test ***")
+    #     test_datasets = [test_dataset]
+    #     if data_args.task_name == "mnli":
+    #         mnli_mm_data_args = dataclasses.replace(data_args, task_name="mnli-mm")
+    #         test_datasets.append(
+    #             GlueDataset(mnli_mm_data_args, tokenizer=tokenizer, mode="test", cache_dir=model_args.cache_dir)
+    #         )
 
-        for test_dataset in test_datasets:
-            predictions = trainer.predict(test_dataset=test_dataset).predictions
-            if output_mode == "classification":
-                predictions = np.argmax(predictions, axis=1)
+    #     for test_dataset in test_datasets:
+    #         predictions = trainer.predict(test_dataset=test_dataset).predictions
+    #         if output_mode == "classification":
+    #             predictions = np.argmax(predictions, axis=1)
 
-            output_test_file = os.path.join(
-                training_args.output_dir, f"test_results_{test_dataset.args.task_name}.txt"
-            )
-            if trainer.is_world_master():
-                with open(output_test_file, "w") as writer:
-                    logger.info("***** Test results {} *****".format(test_dataset.args.task_name))
-                    writer.write("index\tprediction\n")
-                    for index, item in enumerate(predictions):
-                        if output_mode == "regression":
-                            writer.write("%d\t%3.3f\n" % (index, item))
-                        else:
-                            item = test_dataset.get_labels()[item]
-                            writer.write("%d\t%s\n" % (index, item))
+    #         output_test_file = os.path.join(
+    #             training_args.output_dir, f"test_results_{test_dataset.args.task_name}.txt"
+    #         )
+    #         if trainer.is_world_master():
+    #             with open(output_test_file, "w") as writer:
+    #                 logger.info("***** Test results {} *****".format(test_dataset.args.task_name))
+    #                 writer.write("index\tprediction\n")
+    #                 for index, item in enumerate(predictions):
+    #                     if output_mode == "regression":
+    #                         writer.write("%d\t%3.3f\n" % (index, item))
+    #                     else:
+    #                         item = test_dataset.get_labels()[item]
+    #                         writer.write("%d\t%s\n" % (index, item))
     return eval_results
 
 

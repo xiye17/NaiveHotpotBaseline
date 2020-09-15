@@ -4,7 +4,6 @@ from transformers import LongformerConfig, RobertaConfig, BertConfig, RobertaMod
 import torch
 from torch import nn
 from torch.nn import CrossEntropyLoss
-from common.utils import NUM_DOCUMENT_PER_EXAMPLE
 
 _BERT_CONFIG_FOR_DOC = "BertConfig"
 _BERT_TOKENIZER_FOR_DOC = "BertTokenizer"
@@ -155,16 +154,16 @@ class RobertaForParagraphRankingCls(BertPreTrainedModel):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         batch_size = input_ids.size(0)
-
+        NUM_DOCUMENT_PER_EXAMPLE = input_ids.size(1)
         # my gpu sucks. have to do this to fit my gpu size.
-        # debugging = True
-        # if debugging:
-        #     NUM_DOCUMENT_PER_EXAMPLE = 3
-        #     input_ids = input_ids[:,:NUM_DOCUMENT_PER_EXAMPLE,:]
-        #     attention_mask = attention_mask[:,:NUM_DOCUMENT_PER_EXAMPLE,:]
-        #     if token_type_ids is not None:
-        #         token_type_ids = token_type_ids[:,:NUM_DOCUMENT_PER_EXAMPLE,:]
-        #     labels = labels[:,:NUM_DOCUMENT_PER_EXAMPLE]
+        debugging = False
+        if debugging:
+            NUM_DOCUMENT_PER_EXAMPLE = min(4, NUM_DOCUMENT_PER_EXAMPLE)
+            input_ids = input_ids[:,:NUM_DOCUMENT_PER_EXAMPLE,:]
+            attention_mask = attention_mask[:,:NUM_DOCUMENT_PER_EXAMPLE,:]
+            if token_type_ids is not None:
+                token_type_ids = token_type_ids[:,:NUM_DOCUMENT_PER_EXAMPLE,:]
+            labels = labels[:,:NUM_DOCUMENT_PER_EXAMPLE]
         
         # reshape, input_ids, attention_masks, token_type_ids
         input_ids = input_ids.view([batch_size * NUM_DOCUMENT_PER_EXAMPLE, -1])

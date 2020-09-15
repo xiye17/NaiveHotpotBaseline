@@ -60,7 +60,7 @@ def preprocess_split(raw_fname, tokenzier, args, is_train=False):
     # read json
     raw_dataset = read_json(raw_fname)
     if args.do_mini:
-        raw_dataset = raw_dataset[:128]
+        raw_dataset = raw_dataset[:32]
 
     
     proc_dataset = []
@@ -98,5 +98,26 @@ def main():
     dump_to_bin(train_set, train_outfile)
     dump_to_bin(dev_set, dev_outfile)
 
+
+def sanity_check_set(data):
+
+    # is every example supported by 2 document
+    n_docs = [len(d.documents) for d in data]
+    print(set(n_docs))
+
+def sanity_check():
+    output_prefix = 'outputs/'
+    train_outfile = 'train_dataset.bin'
+    dev_outfile = 'dev_dataset.bin'
+    train_outfile = join(output_prefix, train_outfile)
+    dev_outfile = join(output_prefix, dev_outfile)
+    
+    train_set = load_bin(train_outfile)
+    dev_set = load_bin(dev_outfile)
+    
+    sanity_check_set(train_set)
+    sanity_check_set(dev_set)
+    
 if __name__ == "__main__":
-    main()
+    # main()
+    sanity_check()

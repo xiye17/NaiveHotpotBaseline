@@ -1,7 +1,7 @@
 from collections import namedtuple
 from torch.utils.data import Dataset
 # from transformers import BatchEncoding
-from common.utils import load_bin, dump_to_bin, NUM_DOCUMENT_PER_EXAMPLE
+from common.utils import load_bin, dump_to_bin
 import pickle
 import torch
 
@@ -51,7 +51,8 @@ def collate_fn_for_doc_cls(tokenizer, data, do_eval=False):
     # input_ids/attention_mask/token_type_ids: B * NUM_DOC * max_seq_len
     # labels: B * NUM_DOC
     batch_size = len(data)
-    
+    assert batch_size == 1
+    NUM_DOCUMENT_PER_EXAMPLE = len(data[0].documents)
     batch_encoding = []
     batch_labels = []
     for ex in data:
@@ -59,16 +60,13 @@ def collate_fn_for_doc_cls(tokenizer, data, do_eval=False):
         ex_labels = [(1 if d.label > 0 else 0) for d in ex.documents]
         batch_labels.append(ex_labels)
         for d in ex.documents:
-            # pair_input_ids = tokenizer.build_inputs_with_special_tokens(q_ids, d.doc_input_ids)
-            # pair_token_type_ids = tokenizer.create_token_type_ids_from_sequences(q_ids, d.doc_input_ids)
-            
-            # batch_input_ids.append(pair_input_ids)
-            # batch_token_type_ids.append(pair_token_type_ids)
 
             # truncate here
-            pair_encoding = tokenizer.prepare_for_model(q_ids, d.doc_input_ids, trunction=True)
+            pair_encoding = tokenizer.prepare_for_model(q_ids, d.doc_input_ids, truncation=True)
             batch_encoding.append(pair_encoding)
-        
+
+    # if do_eval:
+        # print([len(x['input_ids']) for x in batch_encoding])
     # truncted comes before padding
     padded_encodings = tokenizer.pad(batch_encoding, padding=True)
     
