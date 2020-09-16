@@ -6,7 +6,7 @@ exp_prefix="exps/mini_${exp_id}/"
 mkdir ${exp_prefix}
 
 CUDA_VISIBLE_DEVICES=0 \
-python run_ranker.py \
+python -u run_ranker.py \
     --do_mini \
     --do_train \
     --do_eval \

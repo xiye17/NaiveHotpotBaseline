@@ -167,7 +167,7 @@ class HotpotRankerTrainer(Trainer):
             if not key.startswith("eval_"):
                 metrics[f"eval_{key}"] = metrics.pop(key)
 
-        logger.info(" [epoch %d step %d] metrics: %s", self.epoch, self.global_step, metrics)
+        # logger.info(" [epoch %d step %d] metrics: %s", self.epoch, self.global_step, metrics)
         return HotpotRankerPredictionOutput(predictions=preds, label_ids=label_ids, metrics=metrics)
 
     def prediction_step(self, model, inputs, prediction_loss_only):

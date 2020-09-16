@@ -6,9 +6,10 @@ exp_prefix="exps/${exp_id}/"
 mkdir ${exp_prefix}
 
 CUDA_VISIBLE_DEVICES=0 \
-python run_ranker.py \
+python -u run_ranker.py \
     --do_train \
     --do_eval \
+    --disable_tqdm \
     --model_name_or_path roberta-base \
     --output_dir "${exp_prefix}output" \
     --logging_dir "${exp_prefix}tblogging" \
@@ -17,6 +18,7 @@ python run_ranker.py \
     --num_train_epochs 10 \
     --weight_decay 0.1 \
     --evaluate_during_training \
+    --logging_steps 1000 \
     --eval_steps 50000 \
     --save_steps 50000 \
     --per_device_train_batch_size 1 \
