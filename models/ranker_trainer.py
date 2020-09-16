@@ -29,7 +29,7 @@ def doc_level_acc(eva_preds):
         pred = pred[:,1] > pred[:,0]
         label = label > 0
         
-        results.append(all([pred == label]))
+        results.append(all(pred == label))
     acc = sum(results) * 1.0 / len(results)
     return {
         "acc": acc,
@@ -111,8 +111,6 @@ class HotpotRankerTrainer(Trainer):
 
         batch_size = dataloader.batch_size
         logger.info("***** Running %s *****", description)
-        logger.info("  Num examples = %d", self.num_examples(dataloader))
-        logger.info("  Batch size = %d", batch_size)
         eval_losses: List[float] = []
         preds = []
         label_ids = []
@@ -169,6 +167,7 @@ class HotpotRankerTrainer(Trainer):
             if not key.startswith("eval_"):
                 metrics[f"eval_{key}"] = metrics.pop(key)
 
+        logger.info(" [epoch %d step %d] metrics: %s", self.epoch, self.global_step, metrics)
         return HotpotRankerPredictionOutput(predictions=preds, label_ids=label_ids, metrics=metrics)
 
     def prediction_step(self, model, inputs, prediction_loss_only):

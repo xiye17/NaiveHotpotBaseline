@@ -15,7 +15,7 @@ from transformers import (
     set_seed,
 )
 from models.ranker_trainer import HotpotRankerTrainer as Trainer
-from models.ranker_trainer import acc_and_f1
+from models.ranker_trainer import doc_level_acc
 from dataset import *
 
 from sklearn.metrics import f1_score
@@ -139,7 +139,7 @@ def main():
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=dev_dataset,
-        compute_metrics=acc_and_f1,
+        compute_metrics=doc_level_acc,
         data_collator=collate_fn
     )
 
@@ -162,7 +162,7 @@ def main():
         # Loop to handle MNLI double evaluation (matched, mis-matched)
         eval_datasets = [dev_dataset]
         for eval_dataset in eval_datasets:
-            trainer.compute_metrics = acc_and_f1
+            trainer.compute_metrics = doc_level_acc
             trainer.data_collator=partial(collate_fn_for_doc_cls, tokenizer, do_eval=True)
 
             eval_result = trainer.evaluate(eval_dataset=eval_dataset)

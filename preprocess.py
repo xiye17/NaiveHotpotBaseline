@@ -119,5 +119,5 @@ def sanity_check():
     sanity_check_set(dev_set)
     
 if __name__ == "__main__":
-    # main()
-    sanity_check()
+    main()
+    # sanity_check()
