@@ -31,7 +31,11 @@ def construct_context_and_title(documents, supporting_titles, answer_text):
         
 
 def construct_answers(context, answer):
-    start_positions = [i.start() for i in re.finditer(answer, context)]
+    # print(answer)
+    # print(context)
+    # start_positions0 = [i.start() for i in re.finditer(answer, context)]
+    start_positions = [i for i in range(len(context)) if context[i:].startswith(answer)]
+    # assert start_positions0 == start_positions
     return [{'answer_start': i, 'text': answer} for i in start_positions]
     
 
