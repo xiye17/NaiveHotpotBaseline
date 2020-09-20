@@ -25,6 +25,7 @@ def doc_level_acc(eva_preds):
         # select top 2
         pred = pred.squeeze(0)
         label = label.squeeze(0)
+        # label = label[:pred.shape[0]]
 
         pred = pred[:,1] > pred[:,0]
         label = label > 0
@@ -140,12 +141,15 @@ class HotpotRankerTrainer(Trainer):
             delattr(self, "_past")
 
         if self.args.local_rank != -1:
-            raise RuntimeError('Distributed evaluating not supported')
+            pass
+            # Do nothing
+
+            # raise RuntimeError('Distributed evaluating not supported')
             # In distributed mode, concatenate all results from all nodes:
-            if preds is not None:
-                preds = self.distributed_concat(preds, num_total_examples=self.num_examples(dataloader))
-            if label_ids is not None:
-                label_ids = self.distributed_concat(label_ids, num_total_examples=self.num_examples(dataloader))
+            # if preds is not None:
+            #     preds = self.distributed_concat(preds, num_total_examples=self.num_examples(dataloader))
+            # if label_ids is not None:
+            #     label_ids = self.distributed_concat(label_ids, num_total_examples=self.num_examples(dataloader))
 
         # Finally, turn the aggregated tensors into numpy arrays.
         if preds is not None:
