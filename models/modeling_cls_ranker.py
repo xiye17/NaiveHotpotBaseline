@@ -48,7 +48,6 @@ class BertForParagraphRankingCls(BertPreTrainedModel):
 
         # unwrap, for batching
         
-        
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         outputs = self.bert(
@@ -94,14 +93,17 @@ class BertForParagraphRankingCls(BertPreTrainedModel):
 
 
 
-class MLPClassificationHead(nn.Module):
+class RankerMLPClassificationHead(nn.Module):
     """Head for sentence-level classification tasks."""
 
     def __init__(self, config):
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.out_proj = nn.Linear(config.hidden_size, config.num_labels)
+        # is a supporting fact
+        self.sp_head = nn.Linear(config.hidden_size, config.num_labels)
+        # contain exact answer
+        self.ct_head = nn.Linear(config.hidden_size, config.num_labels)
 
     def forward(self, features, **kwargs):
         # x = features[:, 0, :]  # take <s> token (equiv. to [CLS])
@@ -109,8 +111,9 @@ class MLPClassificationHead(nn.Module):
         x = self.dense(x)
         x = torch.tanh(x)
         x = self.dropout(x)
-        x = self.out_proj(x)
-        return x
+        x_sp = self.sp_head(x)
+        x_ct = self.ct_head(x)
+        return x_sp, x_ct
 
 class RobertaForParagraphRankingCls(BertPreTrainedModel):
     config_class = RobertaConfig
@@ -126,8 +129,9 @@ class RobertaForParagraphRankingCls(BertPreTrainedModel):
         # it can be a bert layer, or simly a self-attention-layer
         # let's do bert layer for now
         self.inter_document_layer = BertLayer(config)
-        self.classifier = MLPClassificationHead(config)
+        self.classifier = RankerMLPClassificationHead(config)
         self.init_weights()
+        self.loss_fct = CrossEntropyLoss(reduction='none')
 
     # initial input
     # input_ids/attention_mask/token_type_ids: B * NUM_DOC * 512
@@ -139,7 +143,9 @@ class RobertaForParagraphRankingCls(BertPreTrainedModel):
         position_ids=None,
         head_mask=None,
         inputs_embeds=None,
-        labels=None,
+        doc_masks=None,
+        sp_labels=None,
+        ct_labels=None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
@@ -154,17 +160,7 @@ class RobertaForParagraphRankingCls(BertPreTrainedModel):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         batch_size = input_ids.size(0)
-        NUM_DOCUMENT_PER_EXAMPLE = input_ids.size(1)
-        # my gpu sucks. have to do this to fit my gpu size.
-        debugging = False
-        if debugging:
-            NUM_DOCUMENT_PER_EXAMPLE = min(4, NUM_DOCUMENT_PER_EXAMPLE)
-            input_ids = input_ids[:,:NUM_DOCUMENT_PER_EXAMPLE,:]
-            attention_mask = attention_mask[:,:NUM_DOCUMENT_PER_EXAMPLE,:]
-            if token_type_ids is not None:
-                token_type_ids = token_type_ids[:,:NUM_DOCUMENT_PER_EXAMPLE,:]
-            labels = labels[:,:NUM_DOCUMENT_PER_EXAMPLE]
-        
+        NUM_DOCUMENT_PER_EXAMPLE = input_ids.size(1)                
         # reshape, input_ids, attention_masks, token_type_ids
         input_ids = input_ids.view([batch_size * NUM_DOCUMENT_PER_EXAMPLE, -1])
         attention_mask = attention_mask.view([batch_size * NUM_DOCUMENT_PER_EXAMPLE, -1])
@@ -191,16 +187,21 @@ class RobertaForParagraphRankingCls(BertPreTrainedModel):
 
         # B * N * H
         doc_vectors = pooled_output.view([batch_size * NUM_DOCUMENT_PER_EXAMPLE, -1])
-        logits = self.classifier(doc_vectors)
-        logits = logits.view([batch_size, NUM_DOCUMENT_PER_EXAMPLE, -1])        
-        loss = None
-        if labels is not None:
+        sp_logits, ct_logits = self.classifier(doc_vectors)
 
-            loss_fct = CrossEntropyLoss()
-            loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+        sp_logits = sp_logits.view([batch_size, NUM_DOCUMENT_PER_EXAMPLE, -1])
+        ct_logits = ct_logits.view([batch_size, NUM_DOCUMENT_PER_EXAMPLE, -1])
+        loss = None
+        if sp_labels is not None:
+            sp_loss = self.loss_fct(sp_logits.view(-1, self.num_labels), sp_labels.view(-1))
+            ct_loss = self.loss_fct(ct_logits.view(-1, self.num_labels), ct_labels.view(-1))
+            sp_masks = sp_labels.bool()
+            loss = torch.sum(sp_loss * doc_masks.view(-1)) + torch.sum(ct_loss * sp_masks.view(-1))
 
         if not return_dict:
-            output = (logits,) + outputs[2:]
+            # sp_logits = 
+            # ct_logits = 
+            output = ((sp_logits,ct_logits)) + outputs[2:]
             return ((loss,) + output) if loss is not None else output
 
         raise RuntimeError('No valid return type')

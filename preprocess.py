@@ -24,7 +24,7 @@ def preprocess_document(ex, tokenzier, supporting_titles=None, answer=None, answ
         if title in supporting_titles:
             label = 1
             if answer_type == 'span':
-                if any([(answer in x) for x in sentences]):
+                if any([(answer in x) for x in sentences]):                    
                     label = 2
         else:
             label = 0
@@ -41,9 +41,9 @@ def preprocess_train_example(raw_data, tokenzier, args):
 
     supporting_facts = raw_data['supporting_facts']
     supporting_titles = [x[0] for x in supporting_facts]
-    documents = [preprocess_document(x, tokenzier, supporting_titles) for x in raw_data['context']]
     answer = raw_data['answer']
     answer_type = 'choice' if answer in ['yes', 'no'] else 'span'
+    documents = [preprocess_document(x, tokenzier, supporting_titles, answer, answer_type) for x in raw_data['context']]
     type = raw_data['type']
     level = raw_data['level']
 

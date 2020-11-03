@@ -14,8 +14,8 @@ from transformers import (
     TrainingArguments,
     set_seed,
 )
-from models.ranker_trainer import HotpotRankerTrainer as Trainer
 from models.ranker_trainer import doc_level_acc
+from transformers import Trainer
 from dataset import *
 
 from sklearn.metrics import f1_score
@@ -33,7 +33,7 @@ class RankerModelArguments:
     """
 
     model_name_or_path: Optional[str] = field(
-        default='roberta-large', metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
+        default='roberta-base', metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
     )
     data_dir: Optional[str] = field(
         default='outputs', metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
