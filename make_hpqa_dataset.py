@@ -57,8 +57,10 @@ def preprocess_train_example(raw_data, tokenzier, args):
     answers = construct_answers(context, answer_text)
     if answers is None or len(answers) == 0:
         raise RuntimeError('Inviad ans')
-    qa0['answers'] = answers    
-    pargraph0 = {'context': context, 'qas': [qa0], 'question_type': raw_data['type']}    
+    qa0['answers'] = answers
+    qa0['is_yesno'] = answer_text in ['yes', 'no']
+    qa0['question_type'] = raw_data['type']
+    pargraph0 = {'context': context, 'qas': [qa0]}
     data = {'title': title, 'paragraphs': [pargraph0]}
 
     return data
