@@ -1,10 +1,10 @@
 #/bin/sh!
 exp_id=$1
 
-exp_prefix="exps/${exp_id}/"
+exp_prefix="exps/ranker_${exp_id}/"
 
 mkdir ${exp_prefix}
-cp run.sh "${exp_prefix}/run.sh"
+cp run_ranker.sh "${exp_prefix}/run_ranker.sh"
 
 CUDA_VISIBLE_DEVICES=1,2,3 \
 python -u run_ranker.py \
