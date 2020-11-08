@@ -5,6 +5,7 @@ from os.path import join
 import sys
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Optional
+from common.utils import dump_to_bin
 
 import numpy as np
 
@@ -61,7 +62,41 @@ class RankerModelArguments:
         default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
     )
 
+def predict_supporting_facts(dataset, pred_outputs):
+    (sp_preds, ct_predicts), (sp_labels, ct_labels, doc_masks), metrics = pred_outputs
+    
+    # sanity check
+    for example, sp_label, ct_label, doc_mask in zip(dataset.examples, sp_labels, ct_labels, doc_masks):
+        # sp_label = sp_label
+        n_doc = np.sum(doc_mask)
+        sp_label = sp_label[doc_mask]
+        ct_label = ct_label[doc_mask]
+        assert n_doc == len(example.documents)
+        label_ = sp_label + ct_label
+        label_ = label_.tolist()
+        origin_label = [x.label for x in example.documents]
+        assert label_ == origin_label
+    
+    num_hit = 0
+    sp_dict = {}
+    for example, sp_pred, doc_mask in zip(dataset.examples, sp_preds, doc_masks):
+        # print(sp_pred.shape)
+        sp_pred = sp_pred[:,1] - sp_pred[:,0]
+        sp_pred = sp_pred[doc_mask]
+        # print(sp_pred.shape)
+        sorted_idx = np.argsort(sp_pred)
+        picked = sorted_idx[-2:].tolist()
+        picked.sort()
 
+        gt_picked = [i for (i,x) in enumerate(example.documents) if x.label > 0]
+        if picked == gt_picked:
+            num_hit += 1
+        sp_dict[example.id] = picked
+        
+    print('Hit Gold Support Facts:', num_hit / len(dataset))        
+    return sp_dict
+        
+        
 def main():
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
@@ -159,53 +194,35 @@ def main():
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
 
-        # Loop to handle MNLI double evaluation (matched, mis-matched)
-        eval_datasets = [dev_dataset]
-        for eval_dataset in eval_datasets:
-            trainer.compute_metrics = doc_level_acc
-            trainer.data_collator=partial(collate_fn_for_doc_cls, tokenizer, do_eval=True)
+        eval_dataset = dev_dataset
+        trainer.compute_metrics = doc_level_acc
+        trainer.data_collator=partial(collate_fn_for_doc_cls, tokenizer, do_eval=True)
 
-            eval_result = trainer.evaluate(eval_dataset=eval_dataset)
+        eval_result = trainer.evaluate(eval_dataset=eval_dataset)
 
-            output_eval_file = os.path.join(
-                training_args.output_dir, f"eval_results.txt"
-            )
-            if trainer.is_world_process_zero():
-                with open(output_eval_file, "w") as writer:
-                    logger.info("***** Eval results *****")
-                    for key, value in eval_result.items():
-                        logger.info("  %s = %s", key, value)
-                        writer.write("%s = %s\n" % (key, value))
+        output_eval_file = os.path.join(
+            training_args.output_dir, f"eval_results.txt"
+        )
+        if trainer.is_world_process_zero():
+            with open(output_eval_file, "w") as writer:
+                logger.info("***** Eval results *****")
+                for key, value in eval_result.items():
+                    logger.info("  %s = %s", key, value)
+                    writer.write("%s = %s\n" % (key, value))
 
-            eval_results.update(eval_result)
+        eval_results.update(eval_result)
 
-    # if training_args.do_predict:
-    #     logging.info("*** Test ***")
-    #     test_datasets = [test_dataset]
-    #     if data_args.task_name == "mnli":
-    #         mnli_mm_data_args = dataclasses.replace(data_args, task_name="mnli-mm")
-    #         test_datasets.append(
-    #             GlueDataset(mnli_mm_data_args, tokenizer=tokenizer, mode="test", cache_dir=model_args.cache_dir)
-    #         )
+    if training_args.do_predict:
+        logging.info("*** Predict ***")
 
-    #     for test_dataset in test_datasets:
-    #         predictions = trainer.predict(test_dataset=test_dataset).predictions
-    #         if output_mode == "classification":
-    #             predictions = np.argmax(predictions, axis=1)
+        test_dataset = dev_dataset
+        predictions = trainer.predict(test_dataset=test_dataset)
+        trainer.compute_metrics = doc_level_acc
+        trainer.data_collator=partial(collate_fn_for_doc_cls, tokenizer, do_eval=True)
 
-    #         output_test_file = os.path.join(
-    #             training_args.output_dir, f"test_results_{test_dataset.args.task_name}.txt"
-    #         )
-    #         if trainer.is_world_master():
-    #             with open(output_test_file, "w") as writer:
-    #                 logger.info("***** Test results {} *****".format(test_dataset.args.task_name))
-    #                 writer.write("index\tprediction\n")
-    #                 for index, item in enumerate(predictions):
-    #                     if output_mode == "regression":
-    #                         writer.write("%d\t%3.3f\n" % (index, item))
-    #                     else:
-    #                         item = test_dataset.get_labels()[item]
-    #                         writer.write("%d\t%s\n" % (index, item))
+        sp_dict = predict_supporting_facts(test_dataset, predictions)
+        predict_file = join(model_args.data_dir, 'dev_ranker_preds.bin')
+        dump_to_bin(sp_dict, predict_file)
     return eval_results
 
 
